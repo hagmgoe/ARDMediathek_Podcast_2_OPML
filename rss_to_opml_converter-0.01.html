@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSS zu OPML Konverter</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            resize: vertical;
+            transition: border-color 0.3s ease;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.3);
+        }
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px 5px;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .main-button {
+            font-size: 18px;
+            padding: 20px 40px;
+            display: block;
+            margin: 20px auto;
+            width: fit-content;
+        }
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 20px 0;
+            display: none;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .feed-info {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .feed-info h3 {
+            margin: 0 0 5px 0;
+            color: #495057;
+        }
+        .feed-info p {
+            margin: 0;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        label {
+            display: block;
+            margin: 20px 0 10px 0;
+            font-weight: bold;
+            color: #333;
+        }
+        .output-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+        }
+        .utility-buttons {
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎧 RSS zu OPML Konverter</h1>
+        
+        <label for="rssUrls">RSS Feed URLs oder ARD Audiothek URLs (eine pro Zeile):</label>
+        <textarea id="rssUrls" placeholder="Fügen Sie hier Ihre RSS Feed URLs oder ARD Audiothek URLs ein, eine pro Zeile...
+Beispiele:
+https://www.ardaudiothek.de/sendung/neues-vom-kaenguru-reloaded/71780208/
+https://audiothek.ce9e.org/92677362.rss"></textarea>
+
+        <button class="main-button" onclick="processAllAndConvert()" id="mainBtn">🚀 Alles verarbeiten und OPML erstellen</button>
+
+        <div class="progress" id="progress">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <div id="status"></div>
+        <div id="feedResults"></div>
+
+        <div class="output-section" id="outputSection" style="display: none;">
+            <label for="opmlOutput">Generierte OPML Datei:</label>
+            <textarea id="opmlOutput" readonly placeholder="Die OPML Datei wird hier erscheinen..."></textarea>
+
+            <div class="utility-buttons">
+                <button onclick="downloadOPML()" id="downloadBtn">💾 OPML herunterladen</button>
+                <button onclick="copyToClipboard()">📋 In Zwischenablage kopieren</button>
+                <button onclick="clearAll()">🗑️ Alles löschen</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let feedData = [];
+
+        async function processAllAndConvert() {
+            const mainBtn = document.getElementById('mainBtn');
+            mainBtn.disabled = true;
+            mainBtn.textContent = '⏳ Verarbeitung läuft...';
+
+            try {
+                const rawUrls = document.getElementById('rssUrls').value
+                    .split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url && url.startsWith('http'));
+
+                if (rawUrls.length === 0) {
+                    showStatus('Bitte geben Sie mindestens eine gültige URL ein.', 'error');
+                    return;
+                }
+
+                // Schritt 1: ARD URLs zu RSS URLs konvertieren
+                showStatus('🔄 Schritt 1: Konvertiere ARD Audiothek URLs zu RSS URLs...', 'info');
+                const urls = rawUrls.map(url => convertArdUrlToRss(url));
+                const convertedCount = rawUrls.filter((url, index) => url !== urls[index]).length;
+                
+                if (convertedCount > 0) {
+                    showStatus(`✨ ${convertedCount} ARD Audiothek URLs automatisch zu RSS URLs konvertiert`, 'success');
+                    // Aktualisiere das Textarea mit den konvertierten URLs
+                    document.getElementById('rssUrls').value = urls.join('\n');
+                    await sleep(1000); // Kurze Pause für bessere UX
+                }
+
+                // Schritt 2: Duplikate entfernen
+                const uniqueUrls = [...new Set(urls)];
+                if (urls.length !== uniqueUrls.length) {
+                    showStatus(`🧹 ${urls.length - uniqueUrls.length} doppelte URLs entfernt`, 'info');
+                    await sleep(500);
+                }
+
+                // Schritt 3: RSS Feeds verarbeiten
+                feedData = [];
+                document.getElementById('feedResults').innerHTML = '';
+                document.getElementById('opmlOutput').value = '';
+                
+                showProgress(true);
+                showStatus(`📡 Schritt 2: Lade ${uniqueUrls.length} RSS Feeds...`, 'info');
+
+                let processed = 0;
+                const total = uniqueUrls.length;
+
+                for (const url of uniqueUrls) {
+                    try {
+                        const feedInfo = await fetchRSSInfo(url);
+                        feedData.push(feedInfo);
+                        displayFeedInfo(feedInfo);
+                    } catch (error) {
+                        console.error(`Fehler beim Laden von ${url}:`, error);
+                        feedData.push({
+                            title: `Fehler: ${url}`,
+                            description: `Konnte nicht geladen werden: ${error.message}`,
+                            xmlUrl: url,
+                            htmlUrl: url,
+                            error: true
+                        });
+                        displayFeedInfo(feedData[feedData.length - 1]);
+                    }
+                    
+                    processed++;
+                    updateProgress((processed / total) * 100);
+                    
+                    // Status-Update alle 5 Feeds
+                    if (processed % 5 === 0 || processed === total) {
+                        showStatus(`📡 Verarbeite Feeds: ${processed}/${total} abgeschlossen...`, 'info');
+                    }
+                }
+
+                // Schritt 4: OPML generieren
+                showStatus('📄 Schritt 3: Generiere OPML Datei...', 'info');
+                await sleep(500);
+                generateOPML();
+
+                // Schritt 5: Abschluss
+                showProgress(false);
+                const successCount = feedData.filter(f => !f.error).length;
+                const errorCount = feedData.filter(f => f.error).length;
+                
+                let finalMessage = `✅ Fertig! ${successCount} von ${total} Feeds erfolgreich verarbeitet!`;
+                if (errorCount > 0) {
+                    finalMessage += ` (${errorCount} Fehler)`;
+                }
+                
+                showStatus(finalMessage, successCount > 0 ? 'success' : 'error');
+                
+                // Output-Sektion anzeigen
+                document.getElementById('outputSection').style.display = 'block';
+                document.getElementById('outputSection').scrollIntoView({ behavior: 'smooth' });
+
+            } catch (error) {
+                showStatus(`❌ Unerwarteter Fehler: ${error.message}`, 'error');
+                console.error('Fehler bei der Verarbeitung:', error);
+            } finally {
+                mainBtn.disabled = false;
+                mainBtn.textContent = '🚀 Alles verarbeiten und OPML erstellen';
+                showProgress(false);
+            }
+        }
+
+        function convertArdUrlToRss(url) {
+            // Prüfe ob es eine ARD Audiothek URL ist
+            const ardMatch = url.match(/https:\/\/www\.ardaudiothek\.de\/sendung\/[^\/]+\/(\d+)\/?$/);
+            if (ardMatch) {
+                const id = ardMatch[1];
+                return `https://audiothek.ce9e.org/${id}.rss`;
+            }
+            
+            // Prüfe ob es eine Episode URL ist
+            const episodeMatch = url.match(/https:\/\/www\.ardaudiothek\.de\/episode\/[^\/]+\/[^\/]+\/[^\/]+\/(\d+)\/?$/);
+            if (episodeMatch) {
+                const id = episodeMatch[1];
+                return `https://audiothek.ce9e.org/${id}.rss`;
+            }
+            
+            return url; // Zurückgeben falls keine ARD URL
+        }
+
+        async function fetchRSSInfo(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const text = await response.text();
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(text, 'text/xml');
+                
+                // Prüfen auf Parse-Fehler
+                const parseError = xml.querySelector('parsererror');
+                if (parseError) {
+                    throw new Error('XML Parse Fehler');
+                }
+
+                // RSS oder Atom Feed Information extrahieren
+                let title, description, link;
+                
+                // RSS Format
+                const rssChannel = xml.querySelector('channel');
+                if (rssChannel) {
+                    title = rssChannel.querySelector('title')?.textContent || 'Unbekannter RSS Feed';
+                    description = rssChannel.querySelector('description')?.textContent || '';
+                    link = rssChannel.querySelector('link')?.textContent || url;
+                } else {
+                    // Atom Format
+                    const atomFeed = xml.querySelector('feed');
+                    if (atomFeed) {
+                        title = atomFeed.querySelector('title')?.textContent || 'Unbekannter Atom Feed';
+                        description = atomFeed.querySelector('subtitle')?.textContent || '';
+                        const linkElement = atomFeed.querySelector('link[rel="alternate"]') || atomFeed.querySelector('link');
+                        link = linkElement?.getAttribute('href') || url;
+                    } else {
+                        throw new Error('Weder RSS noch Atom Format erkannt');
+                    }
+                }
+
+                return {
+                    title: title.trim(),
+                    description: description.trim(),
+                    xmlUrl: url,
+                    htmlUrl: link.trim()
+                };
+            } catch (error) {
+                // Fallback: Verwende URL als Basis für Feed-Info
+                const urlParts = url.split('/');
+                const id = urlParts[urlParts.length - 1].replace('.rss', '');
+                
+                return {
+                    title: `ARD Audiothek Feed ${id}`,
+                    description: `Podcast Feed von der ARD Audiothek (ID: ${id})`,
+                    xmlUrl: url,
+                    htmlUrl: `https://www.ardaudiothek.de/sendung/${id}`,
+                    fallback: true
+                };
+            }
+        }
+
+        function displayFeedInfo(feedInfo) {
+            const resultsDiv = document.getElementById('feedResults');
+            const feedDiv = document.createElement('div');
+            feedDiv.className = 'feed-info';
+            
+            if (feedInfo.error) {
+                feedDiv.style.borderColor = '#dc3545';
+                feedDiv.style.backgroundColor = '#f8d7da';
+            } else if (feedInfo.fallback) {
+                feedDiv.style.borderColor = '#ffc107';
+                feedDiv.style.backgroundColor = '#fff3cd';
+            }
+            
+            feedDiv.innerHTML = `
+                <h3>${feedInfo.title}</h3>
+                <p><strong>Beschreibung:</strong> ${feedInfo.description || 'Keine Beschreibung verfügbar'}</p>
+                <p><strong>RSS URL:</strong> <a href="${feedInfo.xmlUrl}" target="_blank">${feedInfo.xmlUrl}</a></p>
+                <p><strong>Website:</strong> <a href="${feedInfo.htmlUrl}" target="_blank">${feedInfo.htmlUrl}</a></p>
+                ${feedInfo.fallback ? '<p><em>⚠️ Fallback-Daten verwendet (Feed konnte nicht direkt geladen werden)</em></p>' : ''}
+                ${feedInfo.error ? '<p><em>❌ Fehler beim Laden des Feeds</em></p>' : ''}
+            `;
+            
+            resultsDiv.appendChild(feedDiv);
+        }
+
+        function generateOPML() {
+            let opml = `<?xml version="1.0"?>
+<opml version="1.0"><head><title>Overcast Podcast Subscriptions</title></head><body>`;
+
+            feedData.forEach(feed => {
+                if (!feed.error) {
+                    const title = escapeXml(feed.title);
+                    const xmlUrl = escapeXml(feed.xmlUrl);
+                    const htmlUrl = escapeXml(feed.htmlUrl);
+                    
+                    opml += `<outline type="rss" text="${title}" title="${title}" xmlUrl="${xmlUrl}" htmlUrl="${htmlUrl}"/>`;
+                }
+            });
+
+            opml += `</body></opml>`;
+
+            document.getElementById('opmlOutput').value = opml;
+        }
+
+        function escapeXml(unsafe) {
+            return unsafe.replace(/[<>&'"]/g, function (c) {
+                switch (c) {
+                    case '<': return '&lt;';
+                    case '>': return '&gt;';
+                    case '&': return '&amp;';
+                    case '\'': return '&apos;';
+                    case '"': return '&quot;';
+                }
+            });
+        }
+
+        function downloadOPML() {
+            const content = document.getElementById('opmlOutput').value;
+            if (!content) {
+                showStatus('Keine OPML Daten zum Herunterladen verfügbar.', 'error');
+                return;
+            }
+
+            try {
+                // Erstelle Blob mit korrektem MIME-Type
+                const blob = new Blob([content], { type: 'application/xml' });
+                
+                // Überprüfe Browser-Unterstützung
+                if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+                    // Internet Explorer
+                    window.navigator.msSaveOrOpenBlob(blob, `overcast-subscriptions-${new Date().toISOString().split('T')[0]}.opml`);
+                } else {
+                    // Moderne Browser
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `overcast-subscriptions-${new Date().toISOString().split('T')[0]}.opml`;
+                    
+                    // Zu Body hinzufügen für bessere Kompatibilität
+                    document.body.appendChild(a);
+                    
+                    // Click-Event simulieren
+                    a.click();
+                    
+                    // Aufräumen
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 100);
+                }
+                
+                showStatus('✅ OPML Datei wurde heruntergeladen! (Prüfen Sie Ihren Downloads-Ordner)', 'success');
+            } catch (error) {
+                console.error('Download-Fehler:', error);
+                showStatus('❌ Download fehlgeschlagen. Bitte kopieren Sie den Inhalt manuell und speichern Sie ihn als .opml-Datei.', 'error');
+            }
+        }
+
+        function copyToClipboard() {
+            const opmlOutput = document.getElementById('opmlOutput');
+            if (!opmlOutput.value) {
+                showStatus('Keine OPML Daten zum Kopieren verfügbar.', 'error');
+                return;
+            }
+            
+            opmlOutput.select();
+            document.execCommand('copy');
+            showStatus('✅ OPML Daten in die Zwischenablage kopiert!', 'success');
+        }
+
+        function clearAll() {
+            document.getElementById('rssUrls').value = '';
+            document.getElementById('opmlOutput').value = '';
+            document.getElementById('feedResults').innerHTML = '';
+            document.getElementById('status').innerHTML = '';
+            document.getElementById('outputSection').style.display = 'none';
+            feedData = [];
+            showProgress(false);
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function showProgress(show) {
+            const progressDiv = document.getElementById('progress');
+            progressDiv.style.display = show ? 'block' : 'none';
+            if (!show) {
+                document.getElementById('progressBar').style.width = '0%';
+            }
+        }
+
+        function updateProgress(percent) {
+            document.getElementById('progressBar').style.width = percent + '%';
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+    </script>
+</body>
+</html>
